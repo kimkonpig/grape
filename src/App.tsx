@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { getDeviceId } from './storage/deviceId'
-import { addBerry, createNewBunch, fetchClicks, fetchHistory, getOrCreateActiveBunch, type GrapeBunch, type GrapeClick } from './services/grapes'
+import { createNewBunch, fetchClicks, fetchHistory, getOrCreateActiveBunch, toggleBerry, type GrapeBunch, type GrapeClick } from './services/grapes'
 import { supabaseConfigured } from './lib/supabaseClient'
 
 function App() {
@@ -38,17 +38,17 @@ function App() {
     }
   }, [deviceId])
 
-  async function handleBerryClick() {
+  async function handleBerryClickAt(position: number) {
     if (!bunch) return
     setError(null)
     try {
-      const note = window.prompt('무엇을 잘했나요? (메모는 선택사항)') || undefined
-      const updated = await addBerry(bunch, note)
+      const isFilled = clicks.some((c) => c.position === position)
+      const note = isFilled ? undefined : (window.prompt('무엇을 잘했나요? (메모는 선택사항)') || undefined)
+      const updated = await toggleBerry(bunch, position, note)
       setBunch(updated)
       const logs = await fetchClicks(updated.id)
       setClicks(logs)
       if (updated.completed_at) {
-        // refresh history and start a new bunch
         const hist = await fetchHistory(deviceId)
         setHistory(hist)
         const fresh = await createNewBunch(deviceId)
@@ -60,7 +60,7 @@ function App() {
     }
   }
 
-  const filled = bunch?.filled_berries ?? 0
+  const filled = clicks.length
   const total = bunch?.total_berries ?? 0
   const remaining = Math.max(total - filled, 0)
 
@@ -104,7 +104,7 @@ function App() {
               <small>잘한 일을 했을 때 포도알을 눌러주세요</small>
             </div>
 
-            <div className="grape-bunch" onClick={handleBerryClick} role="button" aria-label="add grape">
+            <div className="grape-bunch" role="group" aria-label="grape bunch">
               <div className="vine" aria-hidden>
                 <span className="stem" />
                 <span className="leaf" />
@@ -115,7 +115,18 @@ function App() {
                   <div className="grape-row" key={`row-${rowIdx}`}>
                     {Array.from({ length: count }).map((_, i) => {
                       const idx = globalIndex++
-                      return <div key={`g-${rowIdx}-${i}`} className={idx < filled ? 'grape filled' : 'grape'} />
+                      const position = idx + 1
+                      const filledHere = clicks.some((c) => c.position === position)
+                      return (
+                        <button
+                          type="button"
+                          key={`g-${rowIdx}-${i}`}
+                          className={filledHere ? 'grape filled' : 'grape'}
+                          onClick={() => handleBerryClickAt(position)}
+                          aria-pressed={filledHere}
+                          title={filledHere ? `${position}번째 포도알 취소` : `${position}번째 포도알 채우기`}
+                        />
+                      )
                     })}
                   </div>
                 ))
