@@ -68,6 +68,11 @@ do $$ begin
   ) then
     create policy clicks_insert on public.grape_clicks for insert with check (true);
   end if;
+  if not exists (
+    select 1 from pg_policies where tablename = 'grape_clicks' and policyname = 'clicks_delete'
+  ) then
+    create policy clicks_delete on public.grape_clicks for delete using (true);
+  end if;
 end $$;
 
 

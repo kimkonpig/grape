@@ -47,29 +47,47 @@ export async function getOrCreateActiveBunch(deviceId: string): Promise<GrapeBun
   return created as GrapeBunch;
 }
 
-export async function addBerry(bunch: GrapeBunch, note?: string): Promise<GrapeBunch> {
+export async function toggleBerry(bunch: GrapeBunch, position: number, note?: string): Promise<GrapeBunch> {
   if (bunch.completed_at) return bunch;
-  const nextPosition = bunch.filled_berries + 1;
-  const willComplete = nextPosition >= bunch.total_berries;
 
-  const { error: clickError } = await supabase
+  const { data: existing, error: findErr } = await supabase
     .from('grape_clicks')
-    .insert({ bunch_id: bunch.id, position: nextPosition, note: note ?? null });
-  if (clickError) throw clickError;
+    .select('id')
+    .eq('bunch_id', bunch.id)
+    .eq('position', position)
+    .maybeSingle();
+  if (findErr) throw findErr;
 
-  const updates: Partial<GrapeBunch> & { filled_berries: number } = {
-    filled_berries: nextPosition,
-    ...(willComplete ? { completed_at: new Date().toISOString() } : {}),
-  } as any;
+  if (existing) {
+    const { error: delErr } = await supabase
+      .from('grape_clicks')
+      .delete()
+      .eq('id', existing.id);
+    if (delErr) throw delErr;
+  } else {
+    const { error: insErr } = await supabase
+      .from('grape_clicks')
+      .insert({ bunch_id: bunch.id, position, note: note ?? null });
+    if (insErr) throw insErr;
+  }
 
-  const { data: updated, error: updateError } = await supabase
+  // recompute filled_berries and completion
+  const { data: clicks, error: clicksErr } = await supabase
+    .from('grape_clicks')
+    .select('id')
+    .eq('bunch_id', bunch.id);
+  if (clicksErr) throw clicksErr;
+
+  const newFilled = clicks?.length ?? 0;
+  const completedAt = newFilled >= bunch.total_berries ? new Date().toISOString() : null;
+
+  const { data: updated, error: updErr } = await supabase
     .from('grape_bunches')
-    .update(updates)
+    .update({ filled_berries: newFilled, completed_at: completedAt })
     .eq('id', bunch.id)
     .select()
     .single();
-
-  if (updateError) throw updateError;
+  if (updErr) throw updErr;
   return updated as GrapeBunch;
 }
 
@@ -106,4 +124,12 @@ export async function fetchClicks(bunchId: string): Promise<GrapeClick[]> {
   return (data as GrapeClick[]) ?? [];
 }
 
+const grapesApi = {
+  getOrCreateActiveBunch,
+  toggleBerry,
+  createNewBunch,
+  fetchHistory,
+  fetchClicks,
+};
 
+export default grapesApi;
